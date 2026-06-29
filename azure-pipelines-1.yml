@@ -1,0 +1,79 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- checkout: self
+
+- script: |
+    set -e
+
+    echo "Preparing DSM CLI..."
+    chmod +x ./dsm
+
+    echo "Creating DSM config..."
+    cat > .config.yml <<EOF
+    SENHASEGURA_URL: "$DSM_URL"
+    SENHASEGURA_CLIENT_ID: "$DSM_CLIENT_ID"
+    SENHASEGURA_CLIENT_SECRET: "$DSM_CLIENT_SECRET"
+    SENHASEGURA_SECRETS_FILE: ".runb.vars"
+    EOF
+
+    echo "Running DSM CLI..."
+    ./dsm runb \
+      --app-name "$DSM_APPLICATION" \
+      --system "$DSM_SYSTEM" \
+      --environment "$DSM_ENVIRONMENT" \
+      --config .config.yml \
+      --tool-name azure-devops
+
+    echo "Checking .runb.vars..."
+    if [ ! -f ".runb.vars" ]; then
+      echo "ERROR: .runb.vars was not created"
+      exit 1
+    fi
+
+    echo "Loading DSM secrets..."
+    set -a
+    source .runb.vars
+    set +a
+
+    echo "Generating README.md..."
+    cat > README.md <<EOF
+    # DSM Azure DevOps Demo
+
+    Secrets were fetched from senhasegura DSM during pipeline execution.
+
+    ## Secrets from DSM
+
+    Azure_USERNAME=$Azure_USERNAME
+
+    Azure_PASSWORD=$Azure_PASSWORD
+
+    Azure_TOKEN=$Azure_TOKEN
+
+    ## Build info
+
+    Build number: $BUILD_BUILDNUMBER
+    Branch: $BUILD_SOURCEBRANCH
+    EOF
+
+    echo "Cleaning temp files..."
+    rm -f .runb.vars
+    rm -f .config.yml
+
+    echo "Done."
+  displayName: 'Fetch DSM secrets and generate README'
+  env:
+    DSM_URL: $(DSM_URL)
+    DSM_CLIENT_ID: $(DSM_CLIENT_ID)
+    DSM_CLIENT_SECRET: $(DSM_CLIENT_SECRET)
+    DSM_APPLICATION: $(DSM_APPLICATION)
+    DSM_SYSTEM: $(DSM_SYSTEM)
+    DSM_ENVIRONMENT: $(DSM_ENVIRONMENT)
+
+- publish: README.md
+  artifact: generated-readme
+  displayName: 'Publish generated README'
